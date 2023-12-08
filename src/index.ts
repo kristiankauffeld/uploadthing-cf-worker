@@ -1,32 +1,30 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { Env, Handler } from './types';
+import { Method, Router } from 'tiny-request-router';
+import { uploadRouter } from './uploadthing';
+import { createServerHandler } from 'uploadthing/server';
+import * as process from 'node:process';
 
-export interface Env {
-	// Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
-	// MY_KV_NAMESPACE: KVNamespace;
-	//
-	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
-	// MY_DURABLE_OBJECT: DurableObjectNamespace;
-	//
-	// Example binding to R2. Learn more at https://developers.cloudflare.com/workers/runtime-apis/r2/
-	// MY_BUCKET: R2Bucket;
-	//
-	// Example binding to a Service. Learn more at https://developers.cloudflare.com/workers/runtime-apis/service-bindings/
-	// MY_SERVICE: Fetcher;
-	//
-	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
-	// MY_QUEUE: Queue;
-}
+const router = new Router<Handler>();
 
-export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		return new Response('Hello World!');
+const { GET, POST } = createServerHandler({
+	router: uploadRouter,
+});
+
+router.post('/api/uploadthing', async (req) => POST(req));
+router.get('/api/uploadthing', async (req) => GET(req));
+
+const worker: ExportedHandler<Env> = {
+	async fetch(request, env, ctx) {
+		process.env.UPLOADTHING_SECRET ??= env.UPLOADTHING_SECRET;
+		process.env.UPLOADTHING_APP_ID ??= env.UPLOADTHING_APP_ID;
+
+		const url = new URL(request.url);
+		const match = router.match(request.method as Method, url.pathname);
+
+		if (!match) return new Response('Not found', { status: 404 });
+
+		return match.handler(request, env);
 	},
 };
+
+export default worker;
